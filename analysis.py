@@ -68,6 +68,15 @@ async def log_emojis(message, possible_emojis):
 		await log_emoji(e, message.author)
 
 @client.event
+async def on_guild_emojis_update(guild, before, after):
+	client.db_cur.execute("UPDATE IGNORE emoji SET name=? WHERE eid=?", (after.name, before.eid))
+
+	try:
+		client.db_conn.commit()
+	except:
+		client.rollback()
+
+@client.event
 async def on_message(message):
 	if(message.author.bot):
 		return
