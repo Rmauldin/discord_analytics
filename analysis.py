@@ -1,8 +1,10 @@
 import discord
 import logging
 import sqlite3
+import numpy as np
+import matplotlib.pyplot as plt
 import time, datetime
-import re
+import re, os
 
 
 # Logging and client setup
@@ -30,14 +32,19 @@ async def on_ready():
 	try:
 		client.db_conn.commit()
 	except:
-		client.rollback()
+		client.db_conn.rollback()
 	print("Logged in as {0.user}".format(client))
 
 
 @client.event
 async def log_emoji(emoji, user):
 	timestamp = str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
-	emoji_bytes = await emoji.url.read()
+
+	if(not emoji.animated):
+		emoji_bytes = await emoji.url.read()
+	else:
+		emoji_bytes = None
+
 	client.db_cur.execute("INSERT OR IGNORE INTO emoji (eid, name, bytes) VALUES (?, ?, ?)", \
 							(emoji.id, emoji.name, emoji_bytes))
 	client.db_cur.execute("INSERT OR IGNORE INTO user (uid, name, display_name) VALUES (?, ?, ?)", \
@@ -50,7 +57,7 @@ async def log_emoji(emoji, user):
 	try:
 		client.db_conn.commit()
 	except:
-		client.rollback()
+		client.db_conn.rollback()
 
 	print("Logged :" + emoji.name + ":")
 
@@ -69,12 +76,56 @@ async def log_emojis(message, possible_emojis):
 
 @client.event
 async def on_guild_emojis_update(guild, before, after):
-	client.db_cur.execute("UPDATE IGNORE emoji SET name=? WHERE eid=?", (after.name, before.eid))
+	before_set = set(before)
+	after_set = set(after)
+	removed = before_set - after_set
+	# update emojies
+	for emoji in after:
+		client.db_cur.execute("UPDATE OR IGNORE emoji SET name=? WHERE eid=?", (emoji.name, emoji.id))
+		if emoji not in before_set:
+			print("Added " + emoji.name) 
+
+	for emoji in removed:
+		client.db_cur.execute("DELETE FROM emoji WHERE eid=?", (emoji.id,))
+		client.db_cur.execute("DELETE FROM emoji_usage WHERE eid=?", (emoji.id,))
+		print("Removed " + emoji.name)
 
 	try:
 		client.db_conn.commit()
 	except:
-		client.rollback()
+		client.db_conn.rollback()
+
+@client.event
+async def post_stats(message, top):
+	# TODO charts won't come out consistent
+	# grab the most or least used custom emojis
+	# if top=True, most used. Else least used
+	if(top):
+		client.db_cur.execute('SELECT emoji.name, COUNT(emoji_usage.eid) AS cnt FROM emoji LEFT JOIN emoji_usage ON emoji_usage.eid = emoji.eid \
+		            GROUP BY emoji_usage.eid ORDER BY cnt DESC LIMIT 10')
+	else:
+		client.db_cur.execute('SELECT emoji.name, COUNT(emoji_usage.eid) AS cnt FROM emoji LEFT JOIN emoji_usage ON emoji_usage.eid = emoji.eid \
+		            GROUP BY emoji_usage.eid ORDER BY cnt ASC LIMIT 10')
+	emoji = client.db_cur.fetchall()
+	emoji.sort(key=lambda x: x[1], reverse=not top)
+	print(emoji)
+	n = len(emoji)
+	labels = [x[0] for x in emoji]
+	values = [int(x[1]) for x in emoji]
+
+	plt.barh(range(n), values, tick_label=labels, align='center', color='green')
+	if(top):
+		plt.title("Top Used Emojis")
+	else:
+		plt.title("Least Used Emojis")
+	plt.ylabel("Emoji")
+	plt.xlabel("Times used")
+	plt.gcf().subplots_adjust(bottom=0.2)
+
+	plt.savefig('stats.png', bbox_inches='tight', format='png')
+	await message.channel.send(file=discord.File('stats.png'))
+	os.remove('stats.png')
+
 
 @client.event
 async def on_message(message):
@@ -84,9 +135,13 @@ async def on_message(message):
 	# Logging...
 
 	possible_emojis = set( re.findall(r'(?<=<:)([^:\s]+)(?=:(?:\d))', message.content)  )
-	print("possible_emojis: " + str(possible_emojis))
+	possible_animated_emojis = set( re.findall(r'(?<=<a:)([^:\s]+)(?=:(?:\d))', message.content)  )
+	# print("possible_emojis: " + str(possible_emojis))
 	if(len(possible_emojis) != 0):
 		await client.log_emojis(message, possible_emojis)
+
+	if(len(possible_emojis) != 0):
+		await client.log_emojis(message, possible_animated_emojis)
 
 	if(not message.content.startswith("/analytics ")):
 		return
@@ -101,7 +156,14 @@ async def on_message(message):
 	elif(command == 'unreact'.lower()):
 		client.reactive = False
 		await message.channel.send("I'm now Unreactive")
-
+	elif(command == 'top'.lower() or command == 'top10'.lower()):
+		await client.post_stats(message, top=True)
+	elif(command == 'bottom'.lower()):
+		await client.post_stats(message, top=False)
+	elif(command == 'help'.lower()):
+		await message.channel.send('Commands:\nreact - Makes me reactive.\nunreact - Makes me unreactive.\ntop - Lists top 10 used emojis.\nbottom - Lists least 10 used emojis.\n')
+	else:
+		await message.channel.send("Unrecognized command. Try \"/analytics help\"")
 @client.event
 async def on_reaction_add(reaction, user):
 	if(user.bot):
