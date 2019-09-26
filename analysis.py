@@ -5,25 +5,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time, datetime
 import re, os
-
+import json
 
 # Logging and client setup
-client = discord.Client()
+client = discord.Client(activity=discord.Game('/analytics help'))
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
+# Setup info dict
+with open('bot_info.json') as f:
+	info = json.load(f)
+
 setattr(client, 'reactive', False)
 reactive = False
 
 # Database setup
-setattr(client, 'db_conn', sqlite3.connect('analytics.db'))
+setattr(client, 'db_conn', sqlite3.connect(info['database_name']))
 setattr(client, 'db_cur', client.db_conn.cursor())
 
 @client.event
-async def on_ready():
+async def create_database():
 	client.db_cur.execute("CREATE TABLE IF NOT EXISTS emoji(eid INTEGER PRIMARY KEY, name TEXT, bytes VARBINARY);")
 	client.db_cur.execute("CREATE TABLE IF NOT EXISTS user(uid INTEGER PRIMARY KEY, name TEXT, display_name TEXT);")
 	client.db_cur.execute("CREATE TABLE IF NOT EXISTS emoji_usage(uid INTEGER, eid INTEGER, date_used TIMESTAMP, \
@@ -33,6 +37,11 @@ async def on_ready():
 		client.db_conn.commit()
 	except:
 		client.db_conn.rollback()
+
+@client.event
+async def on_ready():
+	await client.user.edit(username=info['bot_name'])
+	await client.create_database()
 	print("Logged in as {0.user}".format(client))
 
 
@@ -97,7 +106,6 @@ async def on_guild_emojis_update(guild, before, after):
 
 @client.event
 async def post_stats(message, top):
-	# TODO charts won't come out consistent
 	# grab the most or least used custom emojis
 	# if top=True, most used. Else least used
 	if(top):
@@ -106,14 +114,14 @@ async def post_stats(message, top):
 	else:
 		client.db_cur.execute('SELECT emoji.name, COUNT(emoji_usage.eid) AS cnt FROM emoji LEFT JOIN emoji_usage ON emoji_usage.eid = emoji.eid \
 		            GROUP BY emoji_usage.eid ORDER BY cnt ASC LIMIT 10')
+
 	emoji = client.db_cur.fetchall()
-	emoji.sort(key=lambda x: x[1], reverse=not top)
-	print(emoji)
+
 	n = len(emoji)
 	labels = [x[0] for x in emoji]
 	values = [int(x[1]) for x in emoji]
 
-	plt.barh(range(n), values, tick_label=labels, align='center', color='green')
+	plt.barh(range(n), values, tick_label=labels, color='green')
 	if(top):
 		plt.title("Top Used Emojis")
 	else:
@@ -121,11 +129,60 @@ async def post_stats(message, top):
 	plt.ylabel("Emoji")
 	plt.xlabel("Times used")
 	plt.gcf().subplots_adjust(bottom=0.2)
-
+	plt.gca().invert_yaxis()
 	plt.savefig('stats.png', bbox_inches='tight', format='png')
 	await message.channel.send(file=discord.File('stats.png'))
+	plt.clf()
 	os.remove('stats.png')
 
+@client.event
+async def user_stats(message):
+	client.db_cur.execute('SELECT user.name, COUNT(emoji_usage.uid) AS cnt FROM user LEFT JOIN emoji_usage ON emoji_usage.uid = user.uid \
+            GROUP BY emoji_usage.uid ORDER BY cnt DESC LIMIT 10')
+
+	users = client.db_cur.fetchall()
+
+	n = len(users)
+	labels = [x[0] for x in users]
+	values = [int(x[1]) for x in users]
+
+	plt.barh(range(n), values, tick_label=labels, color='blue')
+	plt.title("Top Users Who Use Emojis")
+	plt.ylabel("User")
+	plt.xlabel("Times used")
+	plt.gcf().subplots_adjust(bottom=0.2)
+	plt.gca().invert_yaxis()
+	plt.savefig('users.png', bbox_inches='tight', format='png')
+	await message.channel.send(file=discord.File('users.png'))
+	plt.clf()
+	os.remove('users.png')
+
+@client.event
+async def reset_database():
+	print("Resetting database.")
+	client.db_conn.close()
+	print("Database connection closed.")
+	try:
+		os.remove("{}.bak".format(info['database_name']))
+	except OSError as e:
+		pass
+	try:
+		os.rename(info['database_name'], "{}.bak".format(info['database_name']))
+	except PermissionError as e:
+		await message.channel.send("Cannot reset database; currently in use by another process.")
+
+
+	client.db_conn = sqlite3.connect(info['database_name'])
+	client.db_cur = client.db_conn.cursor()
+	await client.create_database()
+
+@client.event
+async def reset_table(message):
+	if(message.channel.permissions_for(message.author).administrator):
+		await client.reset_database()
+		await message.channel.send("Database reset.")
+	else:
+		await message.channel.send("Only admins can reset the database.")
 
 @client.event
 async def on_message(message):
@@ -148,22 +205,27 @@ async def on_message(message):
 
 	# If a command...
 
-	command = message.content.split()[1]
+	command = message.content.split()[1].lower()
 
-	if(command == 'react'.lower()):
+	if(command == 'react'):
 		client.reactive = True
 		await message.channel.send("I'm now Reactive")
-	elif(command == 'unreact'.lower()):
+	elif(command == 'unreact'):
 		client.reactive = False
 		await message.channel.send("I'm now Unreactive")
-	elif(command == 'top'.lower() or command == 'top10'.lower()):
+	elif(command == 'top'):
 		await client.post_stats(message, top=True)
-	elif(command == 'bottom'.lower()):
+	elif(command == 'bottom'):
 		await client.post_stats(message, top=False)
-	elif(command == 'help'.lower()):
-		await message.channel.send('Commands:\nreact - Makes me reactive.\nunreact - Makes me unreactive.\ntop - Lists top 10 used emojis.\nbottom - Lists least 10 used emojis.\n')
+	elif(command == 'users'):
+		await client.user_stats(message)
+	elif(command == 'reset'):
+		await client.reset_table(message)
+	elif(command == 'help'):
+		await message.channel.send('Hi! I keep track of your server custom emoji usage.\nCommands: /analytics \nreact - Makes me reactive.\nunreact - Makes me unreactive.\ntop - Lists top 10 used emojis.\nbottom - Lists least 10 used emojis.\nusers - Lists top 10 users who use the most emojis.\nreset - Resets the database. (Admin only)\n')
 	else:
 		await message.channel.send("Unrecognized command. Try \"/analytics help\"")
+
 @client.event
 async def on_reaction_add(reaction, user):
 	if(user.bot):
@@ -186,4 +248,4 @@ async def on_disconnect():
 	client.db_conn.close()
 	print("Database connection closed.")
 
-client.run('NjE5NjYyNjgzNTc4MzAyNDk5.XXMazQ.n49orpmTWGO6SEaSaV9vwCshSx8')
+client.run(info['token'])
