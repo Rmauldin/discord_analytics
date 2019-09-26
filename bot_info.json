@@ -1,0 +1,5 @@
+{
+"token" : "your token here",
+"bot_name" : "Analytics",
+"database_name" : "analytics.db"
+}
