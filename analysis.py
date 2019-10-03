@@ -62,9 +62,8 @@ async def on_member_join(member):
 async def add_users(guild):
 	guild_id = guild.id
 	for member in guild.members:
-		await client.log_member(member)
-		# client.db_cur[guild_id].execute("INSERT OR IGNORE INTO user (uid, name, display_name) VALUES (?, ?, ?)", \
-		# 								(member.id, member.name, member.display_name))
+		if(not member.bot):
+			await client.log_member(member)
 
 @client.event
 async def log_member(member):
@@ -98,7 +97,7 @@ async def log_emoji_usage(emoji, user):
 	# 						(emoji.id, emoji.name, 1 if emoji.animated else 0))
 	# client.db_cur.execute("INSERT OR IGNORE INTO user (uid, name, display_name) VALUES (?, ?, ?)", \
 	# 						(user.id, user.name, user.display_name))
-	client.db_cur[guild_id].execute("INSERT OR IGNORE INTO emoji_usage(uid, eid, date_used) VALUES (?, ?, ?)",\
+	client.db_cur[guild_id].execute("INSERT INTO emoji_usage(uid, eid, date_used) VALUES (?, ?, ?)",\
 							(user.id, emoji.id, timestamp))
 	try:
 		client.db_conn[guild_id].commit()
