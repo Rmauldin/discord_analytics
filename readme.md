@@ -17,7 +17,7 @@ Setup the environment with requirements.txt. Alter bot_info.json with your speci
 ## List of commands:
 	/analytics help - Lists supported commands.
 	/analytics react - Makes me reactive. Reacts to existing reactions.
-	/analytics nunreact - Makes me unreactive. Stops reacts to existing reactions.
+	/analytics unreact - Makes me unreactive. Stops reacts to existing reactions.
 	/analytics top - Lists top 10 used emojis with a chart.
 	/analytics bottom - Lists least 10 used emojis with a chart.
 	/analytics users - Lists top 10 users who use the most emojis with a chart.
