@@ -93,10 +93,6 @@ async def log_emoji_usage(emoji, user):
 	timestamp = str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
 	guild_id = user.guild.id
 
-	# client.db_cur[guild_id].execute("INSERT OR IGNORE INTO emoji (eid, name, animated) VALUES (?, ?, ?)", \
-	# 						(emoji.id, emoji.name, 1 if emoji.animated else 0))
-	# client.db_cur.execute("INSERT OR IGNORE INTO user (uid, name, display_name) VALUES (?, ?, ?)", \
-	# 						(user.id, user.name, user.display_name))
 	client.db_cur[guild_id].execute("INSERT INTO emoji_usage(uid, eid, date_used) VALUES (?, ?, ?)",\
 							(user.id, emoji.id, timestamp))
 	try:
@@ -111,18 +107,9 @@ async def log_emoji_usages(emojis, user):
 	for emoji in emojis:
 		await client.log_emoji_usage(emoji, user)
 
-	# if(len(possible_emojis) == 0):
-	# 	return
-
-	# guild_emojis = {x.name : x for x in message.guild.emojis}
-
-	# emojis = [guild_emojis[x] for x in guild_emojis.keys()&possible_emojis]
-
-	# for e in emojis:
-	# 	await log_emoji_usage(e, message.author)
-
 @client.event
 async def on_guild_emojis_update(guild, before, after):
+	timestamp = str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
 	guild_id = guild.id
 	before_set = set(before)
 	after_set = set(after)
@@ -131,12 +118,12 @@ async def on_guild_emojis_update(guild, before, after):
 	for emoji in after:
 		client.db_cur[guild_id].execute("UPDATE OR IGNORE emoji SET name=? WHERE eid=?", (emoji.name, emoji.id))
 		if emoji not in before_set:
-			print("Added " + emoji.name) 
+			print("{}: Added {}".format(timestamp, emoji.name)) 
 
 	for emoji in removed:
 		client.db_cur[guild_id].execute("DELETE FROM emoji WHERE eid=?", (emoji.id,))
 		client.db_cur[guild_id].execute("DELETE FROM emoji_usage WHERE eid=?", (emoji.id,))
-		print("Removed " + emoji.name)
+		print("{}: Removed {}".format(timestamp, emoji.name))
 
 	try:
 		client.db_conn[guild_id].commit()
@@ -201,8 +188,9 @@ async def user_stats(message):
 
 @client.event
 async def reset_database(message):
+	timestamp = str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
 	guild_id = message.guild.id
-	print("Resetting database.")
+	print("{}: Resetting database for guild {}".format(timestamp, guild_id))
 	client.db_conn[guild_id].close()
 	print("Database connection closed.")
 	try:
@@ -210,7 +198,7 @@ async def reset_database(message):
 	except OSError as e:
 		pass
 	try:
-		os.rename("{}{}.db".format(guild_id), "{}.db.bak".format(info['database_folder'], guild_id))
+		os.rename("{}{}.db".format(info['database_folder'], guild_id), "{}{}.db.bak".format(info['database_folder'], guild_id))
 	except PermissionError as e:
 		await message.channel.send("Cannot reset database; currently in use by another process.")
 
@@ -319,7 +307,7 @@ async def on_reaction_add(reaction, user):
 		return
 
 	if(reaction.custom_emoji):
-		await log_emoji_usage(reaction.emoji, user)
+		await client.log_emoji_usage(reaction.emoji, user)
 
 	if(client.reactive):
 		await reaction.message.add_reaction(reaction.emoji)
