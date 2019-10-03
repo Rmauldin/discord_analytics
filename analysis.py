@@ -21,7 +21,7 @@ with open('bot_info.json') as f:
 if(not info['database_folder'].endswith('/')):
 	info['database_folder'] = info['database_folder'] + "/"
 
-setattr(client, 'reactive', False)
+setattr(client, 'reactive', dict())
 
 # Database setup
 setattr(client, 'db_conn', dict() )
@@ -32,6 +32,7 @@ async def create_database(guild):
 	if not os.path.exists(info['database_folder']):
 		os.makedirs(info['database_folder'])
 	guild_id = guild.id
+	client.reactive[guild_id] = False
 	client.db_conn[guild_id] = sqlite3.connect("{}{}.db".format(info['database_folder'], guild_id))
 	client.db_cur[guild_id] = client.db_conn[guild_id].cursor()
 
@@ -100,7 +101,7 @@ async def log_emoji_usage(emoji, user):
 	except:
 		client.db_conn[guild_id].rollback()
 
-	print("{}: Logged :{}:".format(timestamp, emoji.name))
+	print("{}: Logged :{}: for guild {}".format(timestamp, emoji.name, guild_id))
 
 @client.event
 async def log_emoji_usages(emojis, user):
@@ -281,10 +282,10 @@ async def on_message(message):
 	command = message.content.split()[1].lower()
 
 	if(command == 'react'):
-		client.reactive = True
+		client.reactive[message.guild.id] = True
 		await message.channel.send("I'm now Reactive")
 	elif(command == 'unreact'):
-		client.reactive = False
+		client.reactive[message.guild.id] = False
 		await message.channel.send("I'm now Unreactive")
 	elif(command == 'top'):
 		await client.post_stats(message, top=True)
@@ -309,7 +310,7 @@ async def on_reaction_add(reaction, user):
 	if(reaction.custom_emoji):
 		await client.log_emoji_usage(reaction.emoji, user)
 
-	if(client.reactive):
+	if(client.reactive[user.guild.id]):
 		await reaction.message.add_reaction(reaction.emoji)
 
 @client.event
