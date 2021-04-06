@@ -11,12 +11,12 @@ import json
 client = discord.Client(activity=discord.Game('/analytics help'))
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler(filename=' ~/discord_analytics/discord.log', encoding='utf-8', mode='w')
+handler = logging.FileHandler(filename='~/discord_analytics/discord.log', encoding='utf-8', mode='w')
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
 # Setup info dict
-with open('bot_info.json') as f:
+with open('~/discord_analytics/bot_info.json') as f:
 	info = json.load(f)
 
 if(not info['database_folder'].endswith('/')):
