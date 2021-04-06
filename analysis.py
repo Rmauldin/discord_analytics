@@ -1,3 +1,4 @@
+#!~/bot/bin/python3
 import discord
 import logging
 import sqlite3
@@ -323,7 +324,10 @@ async def on_reaction_remove(reaction, user):
 @client.event
 async def on_disconnect():
 	for conn in client.db_conn:
-		conn.close()
+		try:
+			conn.close()
+		except AttributeError as e:
+			print("Error: {}".format(e))
 	print("Database connections closed.")
 
 client.run(info['token'])
