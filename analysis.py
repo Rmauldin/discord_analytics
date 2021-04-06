@@ -1,4 +1,4 @@
-#!~/bot/bin/python3
+#!/home/ryan/bot/bin/python3
 import discord
 import logging
 import sqlite3
